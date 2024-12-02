@@ -1,0 +1,72 @@
+import "tfplan/v2" as tfplan
+import "tfrun" as run
+import "strings"
+
+# Define variables
+messages = []
+resource = "RDS"
+allowed_sizes = ["db.t2.micro", "db.t3.micro", "db.t4g.micro"]
+
+# Retrieve rds instance info
+rds = filter tfplan.resource_changes as _, rc {
+    rc.mode is "managed" and
+    rc.type is "aws_db_instance"
+  }
+  # If no task definitions found, return true (policy passes)
+  if length(rds) == 0 {
+    print("No security groups found.")
+    return true
+  }
+
+# Checks function
+rds_checks = func() {
+  if run.is_destroy == true {
+    return true
+  }
+  for rds as address, rds{
+    # Check if storage is encrypted
+    
+  	instance = rds.change.after.instance_class
+    is_allowed = false
+    # Checking if instance is in allowed sizes
+    for allowed_sizes as size {
+      if (size == instance){
+        is_allowed = true
+        break
+      }
+    }
+    # If instance isn't in allowed sizes return false
+    if !is_allowed {
+      message = instance + " is not allowed. Accepted sizes are: " + strings.join(allowed_sizes, ", ") + "."
+    	append(messages, message)
+    }
+    # Check if encryption is enabled
+    if(rds.change.after.storage_encrypted == null){
+      append(messages, "Storage is not encrypted.")
+    }
+    # Check if defualt username is use.
+    if(rds.change.after.username == "admin"){
+      append(messages, "Default username 'admin' in use.")
+    }
+    # Check if DB is publicly accessible
+    if(rds.change.after.publicly_accessible){
+      append(messages, "RDS instance accessible via internet.")
+    }
+  }
+
+  if length(messages) != 0 {
+    print(resource + " misconfigurations:")
+    counter = 1
+  	for messages as message{
+    	print(counter, message)
+      counter += 1
+    }
+    return false
+  }
+  return true
+}
+
+# Main rule
+main = rule {
+ 		rds_checks()
+}

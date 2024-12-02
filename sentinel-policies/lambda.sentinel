@@ -1,0 +1,78 @@
+import "tfplan/v2" as tfplan
+import "tfrun" as run
+import "collection/lists" as lists
+import "strings"
+import "json"
+
+# Define variables
+messages = []
+resource = "Lambda"
+allowed_policies = ["secretsmanager:GetSecretValue", "rds:DescribeDBInstances", "ec2CreateNetworkInterface", "ec2:DescribeNetworkInterfaces", "ec2:DeleteNetworkInterface", "ec2:AssignPrivateIpAddresses", "ec2:UnassignPrivateIpAddresses", "execute-api:Invoke"]
+lambda_checks = func() {
+  if run.is_destroy == true {
+    return true
+  }
+  # Retrieve resource info
+  lambda = filter tfplan.resource_changes as _, rc {
+    rc.mode is "managed" and
+    rc.type is "aws_lambda_function"
+  }
+  lambda_policy = filter tfplan.resource_changes as _, rc {
+    rc.mode is "managed" and
+    rc.type is "aws_iam_policy" and 
+    strings.has_suffix(rc.address, "lambda_policy")
+  }
+  # Checks if resources exist
+  if length(lambda) == 0 {
+    append(messages, "No security groups found.")
+  }
+  if length(lambda_policy) == 0 {
+    append(messages, "Either no policy exists or it is named improperly.")
+  }
+  
+  # Set binary for allowed policies
+  is_allowed = false
+  # Checking if instance is in allowed sizes
+  for lambda_policy as address, permission {
+    policies = json.unmarshal(permission.change.after.policy)
+    policy_list = []
+    excess_resources = []
+    for policies.Statement as policy{
+      policy_list = lists.concat(policy_list, policy.Action)
+      if policy.Resource == "*"{
+        append(excess_resources, policy.Action)
+      }
+    }
+    message = "The following policies have access to too many resources: " + strings.join(excess_resources, ", ") + "."
+    append(messages, message)
+    disallowed_policies = []
+    for policy_list as policy {
+    	if !(policy in allowed_policies){
+      	append(disallowed_policies, policy)
+      }
+    }
+    message = "The following policies aren't allowed: " + strings.join(disallowed_policies, ", ") + "."
+    append(messages, message)
+  }
+  # If instance isn't in allowed sizes return false
+  for lambda as address, lambda{
+    # Check timeout
+    if(lambda.change.after.timeout < 10){
+      append(messages, "Increase timeout.")
+    }
+  }
+  if length(messages) != 0 {
+    print(resource + " misconfigurations:")
+    counter = 1
+  	for messages as message{
+    	print(string(counter) + ". " + message)
+      counter += 1
+    }
+    return false
+  }
+  return true
+}
+# Main rule
+main = rule {
+    lambda_checks()
+}

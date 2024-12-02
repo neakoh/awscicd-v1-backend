@@ -1,0 +1,63 @@
+import "tfplan/v2" as tfplan
+import "tfrun" as run
+import "strings"
+
+# Define variables
+messages = []
+resource = "Security Group"
+# Main rule
+vpc_checks = func() {
+  if run.is_destroy == true {
+    return true
+  }
+  # Retrieve resource info
+  sgs = filter tfplan.resource_changes as _, rc {
+    rc.mode is "managed" and
+    rc.type is "aws_security_group"
+  }
+  # Check if resource exists
+  if length(sgs) == 0 {
+    append(messages, "No security groups found.")
+  }
+  for sgs as address, sg {
+    ingress = sg.change.after.ingress else []
+    if length(ingress) > 0 {
+      for ingress as i{
+        for i.cidr_blocks as cb{
+          if cb == "0.0.0.0/0" {
+            append(messages, ("Ingress CIDR block fully open in "+ sg.change.after.name + " on port " + string(i.from_port)))
+          }
+        }
+      }
+    }
+    
+    egress = sg.change.after.egress else []
+    if length(egress) > 0 {
+      for egress as i{
+        for i.cidr_blocks as cb{
+          if cb == "0.0.0.0/0" {
+            #print(i.from_port)
+            append(messages, ("Egress CIDR block fully open in "+ sg.change.after.name + " on port " + string(i.from_port)))
+          }
+        }
+      }
+    }
+  }
+
+  # Checking if any misconfigurations exist
+
+  if length(messages) != 0 {
+    print(resource + " misconfigurations:")
+    counter = 1
+  	for messages as message{
+    	print(string(counter) + ". " + message)
+      counter += 1
+    }
+    return false
+  }
+  return true
+}
+# Main rule
+main = rule {
+ 		vpc_checks()
+}

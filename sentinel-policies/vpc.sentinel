@@ -1,0 +1,60 @@
+import "tfplan/v2" as tfplan
+import "tfrun" as run
+import "strings"
+
+messages = []
+resource = "VPC"
+
+vpc_checks = func() {
+  if run.is_destroy == true {
+    return true
+  }
+  vpc = filter tfplan.resource_changes as _, rc {
+    rc.mode is "managed" and
+    rc.type is "aws_vpc"
+  }
+  subnet = filter tfplan.resource_changes as _, rc {
+    rc.mode is "managed" and
+    rc.type is "aws_subnet"
+  }
+  if length(vpc) == 0 {
+    append(messages, "No vpc found.")
+  }
+  if length(subnet) == 0 {
+    append(messages, "No subnets found.")
+  }
+  for subnet as address, subnet {
+    if int(strings.split(subnet.change.after.cidr_block, "/")[1]) < 24{
+      append(messages, (subnet.address + " CIDR prefix too large. Must be at least 24."))
+    }
+    if(strings.has_prefix(subnet.address, "aws_subnet.private")){
+      if subnet.change.after.cidr_block == "0.0.0.0/0"{
+        append(messages, "Subnet not private. Edit CIDR block")
+    	}
+      if subnet.change.after.map_public_ip_on_launch == true{
+      	append(messages, "Subnet not private. Public IP enabled")
+      }
+    }
+  }
+  for vpc as address, vpc {
+    requires_name = vpc.change.after.tags else []
+    if length(requires_name) == 0 or requires_name.Name == "main-vpc"{
+      append(messages, "VPC must follow proper naming conventions. Current name: " + requires_name.Name)
+    }
+  }
+
+  if length(messages) != 0 {
+    print(resource + " misconfigurations:")
+    counter = 1
+  	for messages as message{
+    	print(string(counter) + ". " + message)
+      counter += 1
+    }
+    return false
+  }
+  return true
+}
+# Main rule
+main = rule {
+ 		vpc_checks()
+}
