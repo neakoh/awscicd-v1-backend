@@ -1,5 +1,5 @@
 # Backend Infrastructure (Repo 1)
-Repo 1 of 2. This defines the AWS network infrastructure and backend components, and the associated Sentinel policies for each component. Frontend components are defined in repo 2.
+Repo 1 of 2. This defines the AWS network infrastructure and backend components, and the associated Sentinel policies for each component. Frontend components are defined in **[repo 2](https://github.com/neakoh/awscicd-v1-frontend)**.
 
 The focus of this project was not the application code nor the Lambda function and as such there are several improvements that could be made.
 I didn't implement HTTPS into my ALB as it wasn't in the scope of this project which is why inbound traffic to the ALB is over HTTP. I demonstrate practical use of tls certificates in a static site
